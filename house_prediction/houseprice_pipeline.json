@@ -1,0 +1,343 @@
+{
+  "components": {
+    "comp-data-ingestion": {
+      "executorLabel": "exec-data-ingestion",
+      "outputDefinitions": {
+        "artifacts": {
+          "dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-evaluation": {
+      "executorLabel": "exec-evaluation",
+      "inputDefinitions": {
+        "artifacts": {
+          "model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "preprocessed_dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "html": {
+            "artifactType": {
+              "schemaTitle": "system.HTML",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "metrics": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-preprocessing": {
+      "executorLabel": "exec-preprocessing",
+      "inputDefinitions": {
+        "artifacts": {
+          "input_dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "preprocessed_dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-training": {
+      "executorLabel": "exec-training",
+      "inputDefinitions": {
+        "artifacts": {
+          "preprocessed_dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        },
+        "parameters": {
+          "hyperparameters": {
+            "parameterType": "STRUCT"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "metrics": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    }
+  },
+  "defaultPipelineRoot": "gs://house-price-vertex-thang-2026/pipeline_root_houseprice",
+  "deploymentSpec": {
+    "executors": {
+      "exec-data-ingestion": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "data_ingestion"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef data_ingestion(\n    dataset: Output[Dataset]\n):\n    \"\"\"Loads and prepares the house price dataset.\"\"\"\n    import pandas as pd\n    import logging\n\n    logging.basicConfig(level=logging.INFO)\n    logging.info(\"Starting data ingestion...\")\n\n    # 1. Load dataset from GCS bucket\n    gcs_path = \"gs://house-price-vertex-thang-2026/data/Housing.csv\"\n    df = pd.read_csv(gcs_path)\n\n    logging.info(f\"Loaded {len(df)} rows from {gcs_path}\")\n    logging.info(f\"Columns: {list(df.columns)}\")\n\n    # 2. Save dataset to output artifact\n    logging.info(f\"Saving dataset to {dataset.path}...\")\n    df.to_csv(dataset.path, index=False)\n\n    logging.info(\"Data ingestion complete!\")\n\n"
+          ],
+          "image": "europe-west4-docker.pkg.dev/vertex-ai-484314/vertex-ai-pipeline-thang/training:latest"
+        }
+      },
+      "exec-evaluation": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "evaluation"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef evaluation(\n    model: Input[Model],\n    preprocessed_dataset: Input[Dataset],\n    metrics: Output[Metrics],\n    html: Output[HTML]\n):\n    \"\"\"Evaluates the model's performance and generates visualizations.\"\"\"\n    import pandas as pd\n    import joblib\n    import matplotlib.pyplot as plt\n    from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error\n    import logging\n    import base64\n    from io import BytesIO\n\n    logging.basicConfig(level=logging.INFO)\n\n    # 1. Load the model and dataset\n    rf_model = joblib.load(model.path)\n    df = pd.read_csv(preprocessed_dataset.path)\n\n    logging.info(f\"Loaded model and dataset with shape: {df.shape}\")\n\n    # Split features and target\n    X = df.drop('price', axis=1)\n    y = df['price']\n\n    # 2. Make predictions\n    y_pred = rf_model.predict(X)\n\n    # 3. Calculate metrics\n    mse = mean_squared_error(y, y_pred)\n    rmse = mse ** 0.5\n    mae = mean_absolute_error(y, y_pred)\n    r2 = r2_score(y, y_pred)\n\n    # 4. Save metrics\n    metrics.log_metric(\"mse\", float(mse))\n    metrics.log_metric(\"rmse\", float(rmse))\n    metrics.log_metric(\"mae\", float(mae))\n    metrics.log_metric(\"r2_score\", float(r2))\n\n    logging.info(f\"MSE: {mse:.4f}\")\n    logging.info(f\"RMSE: {rmse:.4f}\")\n    logging.info(f\"MAE: {mae:.4f}\")\n    logging.info(f\"R2 Score: {r2:.4f}\")\n\n    # 5. Create visualizations\n    fig, axes = plt.subplots(1, 2, figsize=(14, 5))\n\n    # Actual vs Predicted\n    axes[0].scatter(y, y_pred, alpha=0.5)\n    axes[0].plot([y.min(), y.max()], [y.min(), y.max()], 'r--', lw=2)\n    axes[0].set_xlabel('Actual Price')\n    axes[0].set_ylabel('Predicted Price')\n    axes[0].set_title('Actual vs Predicted Prices')\n\n    # Feature Importance\n    feature_importance = pd.DataFrame({\n        'feature': X.columns,\n        'importance': rf_model.feature_importances_\n    }).sort_values('importance', ascending=True)\n\n    axes[1].barh(feature_importance['feature'], feature_importance['importance'])\n    axes[1].set_xlabel('Importance')\n    axes[1].set_title('Feature Importance')\n\n    plt.tight_layout()\n\n    # Convert plot to base64\n    buf = BytesIO()\n    plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')\n    buf.seek(0)\n    img_base64 = base64.b64encode(buf.read()).decode('utf-8')\n    plt.close()\n\n    # 6. Create and save HTML report\n    html_content = f\"\"\"\n    <html>\n    <head><title>Model Evaluation Report</title></head>\n    <body>\n        <h1>House Price Prediction - Model Evaluation</h1>\n        <h2>Performance Metrics</h2>\n        <table border=\"1\" style=\"border-collapse: collapse; padding: 10px;\">\n            <tr><th>Metric</th><th>Value</th></tr>\n            <tr><td>MSE</td><td>{mse:.4f}</td></tr>\n            <tr><td>RMSE</td><td>{rmse:.4f}</td></tr>\n            <tr><td>MAE</td><td>{mae:.4f}</td></tr>\n            <tr><td>R2 Score</td><td>{r2:.4f}</td></tr>\n        </table>\n        <h2>Visualizations</h2>\n        <img src=\"data:image/png;base64,{img_base64}\" />\n    </body>\n    </html>\n    \"\"\"\n\n    with open(html.path, 'w') as f:\n        f.write(html_content)\n\n    logging.info(f\"Evaluation report saved to: {html.path}\")\n\n"
+          ],
+          "image": "europe-west4-docker.pkg.dev/vertex-ai-484314/vertex-ai-pipeline-thang/training:latest"
+        }
+      },
+      "exec-preprocessing": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "preprocessing"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef preprocessing(\n    input_dataset: Input[Dataset],\n    preprocessed_dataset: Output[Dataset],\n):\n    \"\"\"Preprocesses the dataset for training.\"\"\"\n    import pandas as pd\n    from sklearn.preprocessing import StandardScaler, LabelEncoder\n    import logging\n\n    logging.basicConfig(level=logging.INFO)\n\n    # Load the dataset\n    df = pd.read_csv(input_dataset.path)\n    logging.info(f\"Loaded dataset with shape: {df.shape}\")\n\n    # 1. Handle missing values\n    df = df.dropna()\n    logging.info(f\"After dropping NaN: {df.shape}\")\n\n    # 2. Encode categorical features (yes/no columns)\n    categorical_columns = df.select_dtypes(include=['object']).columns\n    label_encoders = {}\n    for col in categorical_columns:\n        le = LabelEncoder()\n        df[col] = le.fit_transform(df[col])\n        label_encoders[col] = le\n\n    logging.info(f\"Encoded categorical columns: {list(categorical_columns)}\")\n\n    # 3. Scale numerical features (except target 'price')\n    numerical_columns = df.select_dtypes(include=['int64', 'float64']).columns.tolist()\n    if 'price' in numerical_columns:\n        numerical_columns.remove('price')\n\n    scaler = StandardScaler()\n    df[numerical_columns] = scaler.fit_transform(df[numerical_columns])\n\n    logging.info(f\"Scaled numerical columns: {numerical_columns}\")\n\n    # 4. Save preprocessed dataset\n    df.to_csv(preprocessed_dataset.path, index=False)\n    logging.info(f\"Preprocessed dataset saved to: {preprocessed_dataset.path}\")\n\n"
+          ],
+          "image": "europe-west4-docker.pkg.dev/vertex-ai-484314/vertex-ai-pipeline-thang/training:latest"
+        }
+      },
+      "exec-training": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "training"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef training(\n    preprocessed_dataset: Input[Dataset],\n    model: Output[Model],\n    metrics: Output[Metrics],\n    hyperparameters: dict\n):\n    \"\"\"Trains the model on the preprocessed dataset.\"\"\"\n    import pandas as pd\n    import joblib\n    from sklearn.model_selection import train_test_split\n    from sklearn.ensemble import RandomForestRegressor\n    from sklearn.metrics import mean_squared_error, r2_score\n    import logging\n\n    logging.basicConfig(level=logging.INFO)\n\n    # Load preprocessed dataset\n    df = pd.read_csv(preprocessed_dataset.path)\n    logging.info(f\"Loaded preprocessed dataset with shape: {df.shape}\")\n\n    # 1. Split features and target (assuming 'price' is the target)\n    X = df.drop('price', axis=1)\n    y = df['price']\n\n    logging.info(f\"Features shape: {X.shape}, Target shape: {y.shape}\")\n\n    # 2. Split into train and validation sets\n    X_train, X_val, y_train, y_val = train_test_split(\n        X, y, test_size=0.2, random_state=hyperparameters.get('random_state', 42)\n    )\n\n    logging.info(f\"Training set size: {len(X_train)}, Validation set size: {len(X_val)}\")\n\n    # 3. Initialize and train the model\n    rf_model = RandomForestRegressor(\n        n_estimators=hyperparameters.get('n_estimators', 100),\n        max_depth=hyperparameters.get('max_depth', 10),\n        random_state=hyperparameters.get('random_state', 42)\n    )\n    rf_model.fit(X_train, y_train)\n\n    logging.info(\"Model training complete!\")\n\n    # 4. Make predictions\n    y_pred = rf_model.predict(X_val)\n\n    # 5. Calculate metrics\n    mse = mean_squared_error(y_val, y_pred)\n    r2 = r2_score(y_val, y_pred)\n\n    # Log metrics\n    metrics.log_metric(\"mse\", float(mse))\n    metrics.log_metric(\"r2_score\", float(r2))\n\n    # 6. Save the model\n    joblib.dump(rf_model, model.path)\n    logging.info(f\"Model saved to: {model.path}\")\n    logging.info(f\"Validation MSE: {mse:.2f}\")\n    logging.info(f\"Validation R2: {r2:.2f}\")\n\n"
+          ],
+          "image": "europe-west4-docker.pkg.dev/vertex-ai-484314/vertex-ai-pipeline-thang/training:latest"
+        }
+      }
+    }
+  },
+  "pipelineInfo": {
+    "description": "House price prediction pipeline.",
+    "name": "houseprice-pipeline"
+  },
+  "root": {
+    "dag": {
+      "outputs": {
+        "artifacts": {
+          "evaluation-metrics": {
+            "artifactSelectors": [
+              {
+                "outputArtifactKey": "metrics",
+                "producerSubtask": "evaluation"
+              }
+            ]
+          },
+          "training-metrics": {
+            "artifactSelectors": [
+              {
+                "outputArtifactKey": "metrics",
+                "producerSubtask": "training"
+              }
+            ]
+          }
+        }
+      },
+      "tasks": {
+        "data-ingestion": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-data-ingestion"
+          },
+          "taskInfo": {
+            "name": "data-ingestion"
+          }
+        },
+        "evaluation": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-evaluation"
+          },
+          "dependentTasks": [
+            "preprocessing",
+            "training"
+          ],
+          "inputs": {
+            "artifacts": {
+              "model": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "model",
+                  "producerTask": "training"
+                }
+              },
+              "preprocessed_dataset": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "preprocessed_dataset",
+                  "producerTask": "preprocessing"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "evaluation"
+          }
+        },
+        "preprocessing": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-preprocessing"
+          },
+          "dependentTasks": [
+            "data-ingestion"
+          ],
+          "inputs": {
+            "artifacts": {
+              "input_dataset": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "dataset",
+                  "producerTask": "data-ingestion"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "preprocessing"
+          }
+        },
+        "training": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-training"
+          },
+          "dependentTasks": [
+            "preprocessing"
+          ],
+          "inputs": {
+            "artifacts": {
+              "preprocessed_dataset": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "preprocessed_dataset",
+                  "producerTask": "preprocessing"
+                }
+              }
+            },
+            "parameters": {
+              "hyperparameters": {
+                "runtimeValue": {
+                  "constant": {
+                    "max_depth": 10.0,
+                    "n_estimators": 100.0,
+                    "random_state": 42.0
+                  }
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "training"
+          }
+        }
+      }
+    },
+    "outputDefinitions": {
+      "artifacts": {
+        "evaluation-metrics": {
+          "artifactType": {
+            "schemaTitle": "system.Metrics",
+            "schemaVersion": "0.0.1"
+          }
+        },
+        "training-metrics": {
+          "artifactType": {
+            "schemaTitle": "system.Metrics",
+            "schemaVersion": "0.0.1"
+          }
+        }
+      }
+    }
+  },
+  "schemaVersion": "2.1.0",
+  "sdkVersion": "kfp-2.7.0"
+}

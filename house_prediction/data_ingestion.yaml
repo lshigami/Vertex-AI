@@ -1,0 +1,78 @@
+# PIPELINE DEFINITION
+# Name: data-ingestion
+# Outputs:
+#    dataset: system.Dataset
+components:
+  comp-data-ingestion:
+    executorLabel: exec-data-ingestion
+    outputDefinitions:
+      artifacts:
+        dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-data-ingestion:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - data_ingestion
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef data_ingestion(\n    dataset: Output[Dataset]\n):\n    \"\"\"\
+          Loads and prepares the house price dataset.\"\"\"\n    import pandas as\
+          \ pd\n    import logging\n\n    logging.basicConfig(level=logging.INFO)\n\
+          \    logging.info(\"Starting data ingestion...\")\n\n    # 1. Load dataset\
+          \ from GCS bucket\n    gcs_path = \"gs://house-price-vertex-thang-2026/data/Housing.csv\"\
+          \n    df = pd.read_csv(gcs_path)\n\n    logging.info(f\"Loaded {len(df)}\
+          \ rows from {gcs_path}\")\n    logging.info(f\"Columns: {list(df.columns)}\"\
+          )\n\n    # 2. Save dataset to output artifact\n    logging.info(f\"Saving\
+          \ dataset to {dataset.path}...\")\n    df.to_csv(dataset.path, index=False)\n\
+          \n    logging.info(\"Data ingestion complete!\")\n\n"
+        image: europe-west4-docker.pkg.dev/vertex-ai-484314/vertex-ai-pipeline-thang/training:latest
+pipelineInfo:
+  name: data-ingestion
+root:
+  dag:
+    outputs:
+      artifacts:
+        dataset:
+          artifactSelectors:
+          - outputArtifactKey: dataset
+            producerSubtask: data-ingestion
+    tasks:
+      data-ingestion:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-data-ingestion
+        taskInfo:
+          name: data-ingestion
+  outputDefinitions:
+    artifacts:
+      dataset:
+        artifactType:
+          schemaTitle: system.Dataset
+          schemaVersion: 0.0.1
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.7.0

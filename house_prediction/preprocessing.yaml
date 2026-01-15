@@ -1,0 +1,107 @@
+# PIPELINE DEFINITION
+# Name: preprocessing
+# Inputs:
+#    input_dataset: system.Dataset
+# Outputs:
+#    preprocessed_dataset: system.Dataset
+components:
+  comp-preprocessing:
+    executorLabel: exec-preprocessing
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        preprocessed_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-preprocessing:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - preprocessing
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef preprocessing(\n    input_dataset: Input[Dataset],\n    preprocessed_dataset:\
+          \ Output[Dataset],\n):\n    \"\"\"Preprocesses the dataset for training.\"\
+          \"\"\n    import pandas as pd\n    from sklearn.preprocessing import StandardScaler,\
+          \ LabelEncoder\n    import logging\n\n    logging.basicConfig(level=logging.INFO)\n\
+          \n    # Load the dataset\n    df = pd.read_csv(input_dataset.path)\n   \
+          \ logging.info(f\"Loaded dataset with shape: {df.shape}\")\n\n    # 1. Handle\
+          \ missing values\n    df = df.dropna()\n    logging.info(f\"After dropping\
+          \ NaN: {df.shape}\")\n\n    # 2. Encode categorical features (yes/no columns)\n\
+          \    categorical_columns = df.select_dtypes(include=['object']).columns\n\
+          \    label_encoders = {}\n    for col in categorical_columns:\n        le\
+          \ = LabelEncoder()\n        df[col] = le.fit_transform(df[col])\n      \
+          \  label_encoders[col] = le\n\n    logging.info(f\"Encoded categorical columns:\
+          \ {list(categorical_columns)}\")\n\n    # 3. Scale numerical features (except\
+          \ target 'price')\n    numerical_columns = df.select_dtypes(include=['int64',\
+          \ 'float64']).columns.tolist()\n    if 'price' in numerical_columns:\n \
+          \       numerical_columns.remove('price')\n\n    scaler = StandardScaler()\n\
+          \    df[numerical_columns] = scaler.fit_transform(df[numerical_columns])\n\
+          \n    logging.info(f\"Scaled numerical columns: {numerical_columns}\")\n\
+          \n    # 4. Save preprocessed dataset\n    df.to_csv(preprocessed_dataset.path,\
+          \ index=False)\n    logging.info(f\"Preprocessed dataset saved to: {preprocessed_dataset.path}\"\
+          )\n\n"
+        image: europe-west4-docker.pkg.dev/vertex-ai-484314/vertex-ai-pipeline-thang/training:latest
+pipelineInfo:
+  name: preprocessing
+root:
+  dag:
+    outputs:
+      artifacts:
+        preprocessed_dataset:
+          artifactSelectors:
+          - outputArtifactKey: preprocessed_dataset
+            producerSubtask: preprocessing
+    tasks:
+      preprocessing:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-preprocessing
+        inputs:
+          artifacts:
+            input_dataset:
+              componentInputArtifact: input_dataset
+        taskInfo:
+          name: preprocessing
+  inputDefinitions:
+    artifacts:
+      input_dataset:
+        artifactType:
+          schemaTitle: system.Dataset
+          schemaVersion: 0.0.1
+  outputDefinitions:
+    artifacts:
+      preprocessed_dataset:
+        artifactType:
+          schemaTitle: system.Dataset
+          schemaVersion: 0.0.1
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.7.0
